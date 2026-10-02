@@ -78,3 +78,37 @@ class UnexpectedDataError(DaciteError):
     def __str__(self) -> str:
         formatted_keys = ", ".join(f'"{key}"' for key in self.keys)
         return f"can not match {formatted_keys} to any data class field"
+
+
+class AnnotatedValidationError(DaciteFieldError):
+    def __init__(
+        self,
+        metadata: Any,
+        phase: Any,
+        value: Any,
+        message: Optional[str] = None,
+        field_path: Optional[str] = None,
+    ) -> None:
+        super().__init__(field_path=field_path)
+        self.metadata = metadata
+        self.phase = phase
+        self.value = value
+        self.message = message
+
+    def __str__(self) -> str:
+        description = (
+            f'annotated constraint {self.metadata!r} failed for field "{self.field_path}" '
+            f'at phase "{self.phase}" - value: "{self.value}"'
+        )
+        if self.message:
+            return f"{description}: {self.message}"
+        return description
+
+
+class AnnotatedMetadataError(DaciteFieldError):
+    def __init__(self, metadata: Any, field_path: Optional[str] = None) -> None:
+        super().__init__(field_path=field_path)
+        self.metadata = metadata
+
+    def __str__(self) -> str:
+        return f'unknown annotated metadata {self.metadata!r} for field "{self.field_path}"'

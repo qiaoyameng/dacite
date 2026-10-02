@@ -1,9 +1,12 @@
+from dacite.annotated import AnnotatedHandler, AnnotatedPhase
 from dacite.cache import set_cache_size, get_cache_size, clear_cache
 from dacite.config import Config
 from dacite.core import from_dict
 from dacite.exceptions import (
     DaciteError,
     DaciteFieldError,
+    AnnotatedValidationError,
+    AnnotatedMetadataError,
     WrongTypeError,
     MissingValueError,
     UnionMatchError,
@@ -13,6 +16,8 @@ from dacite.exceptions import (
 )
 
 __all__ = [
+    "AnnotatedHandler",
+    "AnnotatedPhase",
     "set_cache_size",
     "get_cache_size",
     "clear_cache",
@@ -20,6 +25,8 @@ __all__ = [
     "from_dict",
     "DaciteError",
     "DaciteFieldError",
+    "AnnotatedValidationError",
+    "AnnotatedMetadataError",
     "WrongTypeError",
     "MissingValueError",
     "UnionMatchError",

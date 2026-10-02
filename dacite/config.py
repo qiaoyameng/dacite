@@ -2,6 +2,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, Any, Callable, Optional, Type, List
 
+from dacite.annotated import AnnotatedHandler
 from dacite.frozen_dict import FrozenDict
 
 if sys.version_info >= (3, 8):
@@ -15,6 +16,8 @@ else:
 class Config:
     type_hooks: Dict[Type, Callable[[Any], Any]] = field(default_factory=dict)
     cast: List[Type] = field(default_factory=list)
+    annotated_handlers: Dict[Any, AnnotatedHandler] = field(default_factory=dict)
+    strict_annotated: bool = False
     forward_references: Optional[Dict[str, Any]] = None
     check_types: bool = True
     strict: bool = False

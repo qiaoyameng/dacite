@@ -6,9 +6,23 @@ try:
 except ImportError:
     from typing_extensions import get_origin  # type: ignore
 
+try:
+    from typing import Annotated, get_args  # type: ignore
+except ImportError:
+    from typing_extensions import Annotated, get_args  # type: ignore
+
 from dacite.cache import cache
 
 T = TypeVar("T", bound=Any)
+
+
+def is_annotated(type_: Type) -> bool:
+    return get_origin(type_) is Annotated
+
+
+def extract_annotated(type_: Type) -> Tuple[Type, tuple]:
+    args = get_args(type_)
+    return args[0], args[1:]
 
 
 @cache
@@ -144,6 +158,8 @@ def is_instance(value: Any, type_: Type) -> bool:
         pass
     if type_ == Any:
         return True
+    if is_annotated(type_):
+        return is_instance(value, extract_annotated(type_)[0])
     if is_union(type_):
         return any(is_instance(value, t) for t in extract_generic(type_))
     if is_generic_collection(type_):

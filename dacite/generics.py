@@ -11,6 +11,11 @@ try:
 except ImportError:
     from typing_extensions import get_args, get_origin, Literal  # type: ignore
 
+try:
+    from typing import Annotated  # type: ignore
+except ImportError:
+    from typing_extensions import Annotated  # type: ignore
+
 
 from .dataclasses import get_fields as dataclasses_get_fields
 
@@ -58,7 +63,11 @@ def __concretize(hint: Any, generics: Dict[TypeVar, Type], data_class: Type) -> 
     hint_origin = get_origin(hint)
     hint_args = get_args(hint)
     if hint_origin and hint_args and hint_origin is not Literal:
-        concrete_hint_args = tuple(__concretize(a, generics, data_class) for a in hint_args)
+        if hint_origin is Annotated:
+            # concretize only the wrapped type, keep metadata untouched
+            concrete_hint_args = (__concretize(hint_args[0], generics, data_class),) + hint_args[1:]
+        else:
+            concrete_hint_args = tuple(__concretize(a, generics, data_class) for a in hint_args)
         if concrete_hint_args != hint_args:
             if sys.version_info >= (3, 9):
                 if sys.version_info >= (3, 10) and hint_origin is type(int | str):
@@ -100,7 +109,11 @@ def get_concrete_type_hints(data_class: Type, *args, **kwargs) -> Dict[str, Any]
                 __add_generics(base_origin, base_args, generics)
 
     data_class = orig(data_class)
-    hints = get_type_hints(data_class, *args, **kwargs)
+    if sys.version_info >= (3, 9):
+        # keep Annotated metadata so that annotated handlers can be applied
+        hints = get_type_hints(data_class, *args, include_extras=True, **kwargs)
+    else:
+        hints = get_type_hints(data_class, *args, **kwargs)
 
     for key, hint in hints.copy().items():
         hints[key] = __concretize(hint, generics, data_class)

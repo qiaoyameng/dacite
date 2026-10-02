@@ -3,6 +3,7 @@ from itertools import zip_longest
 from typing import TypeVar, Type, Optional, Mapping, Any, Collection, MutableMapping
 
 from dacite.cache import cache
+from dacite.annotated import AnnotatedPhase, resolve_annotated_handlers, run_annotated_phase
 from dacite.config import Config
 from dacite.data import Data
 from dacite.dataclasses import (
@@ -21,6 +22,8 @@ from dacite.exceptions import (
     StrictUnionMatchError,
 )
 from dacite.types import (
+    is_annotated,
+    extract_annotated,
     is_instance,
     is_generic_collection,
     is_union,
@@ -97,6 +100,8 @@ def _build_value(type_: Type, data: Any, config: Config) -> Any:
         type_ = extract_init_var(type_)
     if type_ in config.type_hooks:
         data = config.type_hooks[type_](data)
+    if is_annotated(type_):
+        return _build_value_for_annotated(type_=type_, data=data, config=config)
     if is_optional(type_) and data is None:
         return data
     if is_union(type_):
@@ -113,6 +118,15 @@ def _build_value(type_: Type, data: Any, config: Config) -> Any:
                 data = type_(data)
             break
     return data
+
+
+def _build_value_for_annotated(type_: Type, data: Any, config: Config) -> Any:
+    inner_type, metadata = extract_annotated(type_)
+    handlers = resolve_annotated_handlers(metadata, config)
+    data = run_annotated_phase(handlers, AnnotatedPhase.TRANSFORM, data)
+    value = _build_value(type_=inner_type, data=data, config=config)
+    value = run_annotated_phase(handlers, AnnotatedPhase.VALIDATE, value)
+    return value
 
 
 def _build_value_for_union(union: Type, data: Any, config: Config) -> Any:
