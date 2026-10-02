@@ -1,5 +1,6 @@
 from typing import Any, Type, Optional, Set, Dict
 from dacite.types import is_union
+from dacite.annotations import AnnotationStage
 
 
 def _name(type_: Type) -> str:
@@ -78,3 +79,43 @@ class UnexpectedDataError(DaciteError):
     def __str__(self) -> str:
         formatted_keys = ", ".join(f'"{key}"' for key in self.keys)
         return f"can not match {formatted_keys} to any data class field"
+
+
+class AnnotationError(DaciteFieldError):
+    def __init__(
+        self,
+        metadata: Any,
+        stage: AnnotationStage,
+        field_path: Optional[str] = None,
+    ) -> None:
+        super().__init__(field_path=field_path)
+        self.metadata = metadata
+        self.stage = stage
+
+
+class UnknownAnnotationError(AnnotationError):
+    def __str__(self) -> str:
+        return (
+            f'unknown annotation "{self.metadata!r}" for field "{self.field_path}" '
+            f"at stage {self.stage.value}"
+        )
+
+
+class AnnotationProcessingError(AnnotationError):
+    def __init__(
+        self,
+        metadata: Any,
+        stage: AnnotationStage,
+        value: Any,
+        original_error: Exception,
+        field_path: Optional[str] = None,
+    ) -> None:
+        super().__init__(metadata=metadata, stage=stage, field_path=field_path)
+        self.value = value
+        self.original_error = original_error
+
+    def __str__(self) -> str:
+        return (
+            f'annotation processing failed for field "{self.field_path}" '
+            f"at stage {self.stage.value}: {self.original_error}"
+        )

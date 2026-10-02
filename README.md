@@ -106,6 +106,7 @@ of `dacite.Config` class
 Configuration is a (data) class with following fields:
 
 - `type_hooks`
+- `annotation_processors`
 - `cast`
 - `forward_references`
 - `check_types`
@@ -328,6 +329,69 @@ If a data class field type is a `Optional[T]` you can pass both -
 collections, e.g. when a field has type `List[T]` you can use `List[T]` to 
 transform whole collection or `T` to transform each item. 
 
+### Annotation processors
+
+You can attach metadata with `typing.Annotated` and register processors for
+that metadata. Processors based on `BeforeTypeConstructionProcessor` receive
+the input value before type hooks, casts and nested construction run, while
+processors based on `AfterTypeConstructionProcessor` receive the constructed
+value afterwards.
+
+```python
+from dataclasses import dataclass
+from typing import Annotated
+
+from dacite import (
+    AfterTypeConstructionProcessor,
+    BeforeTypeConstructionProcessor,
+    Config,
+    from_dict,
+)
+
+
+class Trim:
+    pass
+
+
+class MinimumLength:
+    def __init__(self, length):
+        self.length = length
+
+
+class TrimProcessor(BeforeTypeConstructionProcessor):
+    def process(self, value):
+        return value.strip()
+
+
+class MinimumLengthProcessor(AfterTypeConstructionProcessor):
+    def process(self, value):
+        if len(value) < self.metadata.length:
+            raise ValueError("too short")
+        return value
+
+
+@dataclass
+class A:
+    name: Annotated[str, Trim(), MinimumLength(3)]
+
+
+result = from_dict(
+    A,
+    {"name": " abc "},
+    Config(annotation_processors={
+        Trim: TrimProcessor,
+        MinimumLength: MinimumLengthProcessor,
+    }),
+)
+
+assert result == A(name="abc")
+```
+
+Unknown annotation metadata is ignored by default for backwards
+compatibility. When `strict` is enabled, `UnknownAnnotationError` is raised.
+Processor failures are wrapped in `AnnotationProcessingError` and retain the
+field path and processing stage.
+
 ### Casting
 
 It's a very common case that you want to create an instance of a field type 
@@ -450,6 +514,10 @@ dataclass
 data has not matching keys
 - `StrictUnionMatchError` - raised when `strict_unions_match` mode is enabled 
 and the input data has ambiguous `Union` match
+- `UnknownAnnotationError` - raised when `strict` mode is enabled and the field
+contains unregistered `Annotated` metadata
+- `AnnotationProcessingError` - raised when a registered annotation processor
+fails
 
 ## Development
 

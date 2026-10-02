@@ -8,8 +8,12 @@ from dacite.exceptions import DaciteError
 
 try:
     from typing import get_args, get_origin, Literal  # type: ignore
+    if sys.version_info >= (3, 9):
+        from typing import Annotated  # type: ignore
+    else:
+        from typing_extensions import Annotated  # type: ignore
 except ImportError:
-    from typing_extensions import get_args, get_origin, Literal  # type: ignore
+    from typing_extensions import get_args, get_origin, Literal, Annotated  # type: ignore
 
 
 from .dataclasses import get_fields as dataclasses_get_fields
@@ -54,6 +58,12 @@ def __concretize(hint: Any, generics: Dict[TypeVar, Type], data_class: Type) -> 
         # Fall back on the original TypeVar if the generics dict does not contain it.
         # Setting config.check_types=False will in some cases still make from_dict work, albeit not type checked ofc.
         return generics.get(hint, hint)
+
+    if hasattr(hint, "__metadata__"):
+        concrete_origin = __concretize(hint.__origin__, generics, data_class)
+        if concrete_origin is not hint.__origin__:
+            return Annotated[(concrete_origin, *hint.__metadata__)]
+        return hint
 
     hint_origin = get_origin(hint)
     hint_args = get_args(hint)
@@ -100,7 +110,12 @@ def get_concrete_type_hints(data_class: Type, *args, **kwargs) -> Dict[str, Any]
                 __add_generics(base_origin, base_args, generics)
 
     data_class = orig(data_class)
-    hints = get_type_hints(data_class, *args, **kwargs)
+    if sys.version_info >= (3, 9):
+        hints = get_type_hints(data_class, *args, include_extras=True, **kwargs)
+    else:
+        from typing_extensions import get_type_hints as get_type_hints_with_extras
+
+        hints = get_type_hints_with_extras(data_class, *args, include_extras=True, **kwargs)
 
     for key, hint in hints.copy().items():
         hints[key] = __concretize(hint, generics, data_class)

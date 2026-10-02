@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, Callable, Optional, Type, List
 
 from dacite.frozen_dict import FrozenDict
+from dacite.annotations import ProcessorFactory
 
 if sys.version_info >= (3, 8):
     from functools import cached_property  # type: ignore  # pylint: disable=no-name-in-module
@@ -14,6 +15,7 @@ else:
 @dataclass
 class Config:
     type_hooks: Dict[Type, Callable[[Any], Any]] = field(default_factory=dict)
+    annotation_processors: Dict[Any, ProcessorFactory] = field(default_factory=dict)
     cast: List[Type] = field(default_factory=list)
     forward_references: Optional[Dict[str, Any]] = None
     check_types: bool = True

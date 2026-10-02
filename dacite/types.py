@@ -38,6 +38,20 @@ def is_generic(type_: Type) -> bool:
     return hasattr(type_, "__origin__")
 
 
+def is_annotated(type_: Type) -> bool:
+    return hasattr(type_, "__metadata__")
+
+
+def extract_annotated_type(type_: Type) -> Type:
+    return type_.__origin__
+
+
+def strip_annotations(type_: Type) -> Type:
+    while is_annotated(type_):
+        type_ = extract_annotated_type(type_)
+    return type_
+
+
 @cache
 def is_union(type_: Type) -> bool:
     if is_generic(type_) and type_.__origin__ == Union:
@@ -136,6 +150,8 @@ def is_generic_dataclass(type_: Type) -> bool:
 
 
 def is_instance(value: Any, type_: Type) -> bool:
+    if is_annotated(type_):
+        return is_instance(value, extract_annotated_type(type_))
     try:
         # As described in PEP 484 - section: "The numeric tower"
         if (type_ in [float, complex] and isinstance(value, (int, float))) or isinstance(value, type_):
