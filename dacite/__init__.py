@@ -9,6 +9,7 @@ from dacite.exceptions import (
     UnionMatchError,
     StrictUnionMatchError,
     ForwardReferenceError,
+    TypeVarConstraintError,
     UnexpectedDataError,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "UnionMatchError",
     "StrictUnionMatchError",
     "ForwardReferenceError",
+    "TypeVarConstraintError",
     "UnexpectedDataError",
 ]

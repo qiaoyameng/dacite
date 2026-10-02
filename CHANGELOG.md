@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-...
+### Added
+
+- Validate generic specializations against the `bound`/`constraints` of the substituted
+  type variables (raising `TypeVarConstraintError`), also across multi-level inheritance
+- Treat an unspecialized type variable as its bound, the union of its constraints or `Any`
+  (in this order of precedence) instead of leaving it unresolvable
 
 ## [1.9.2] - 2025-02-05
 

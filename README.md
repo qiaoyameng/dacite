@@ -301,6 +301,29 @@ result = from_dict(data_class=C, data=data)
 assert result == C(z=A(x=X(a='foo'), y=[1,2,3]))
 ```
 
+If a type variable declares a `bound` or constraints, dacite validates the
+concrete type used to specialize it - also when the specialization is passed
+through (multi-level) inheritance - and raises `TypeVarConstraintError` when
+the specialization violates them:
+
+```python
+T = TypeVar('T', bound=X)
+
+
+@dataclass
+class A(Generic[T]):
+    x: T
+
+
+from_dict(data_class=A[int], data={'x': 1})  # raises TypeVarConstraintError
+```
+
+A generic that is used without an explicit specialization follows these rules:
+
+- a type variable with a `bound` is treated as its bound
+- a type variable with constraints is treated as a union of its constraints
+- any other type variable is treated as `Any`
+
 ### Type hooks
 
 You can use `Config.type_hooks` argument if you want to transform the input 

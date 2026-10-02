@@ -2,9 +2,9 @@
 import sys
 from dataclasses import Field, is_dataclass
 from functools import reduce
-from typing import Any, Dict, Generic, List, Tuple, Type, TypeVar, get_type_hints
+from typing import Any, Dict, Generic, List, Set, Tuple, Type, TypeVar, Union, get_type_hints
 
-from dacite.exceptions import DaciteError
+from dacite.exceptions import DaciteError, TypeVarConstraintError
 
 try:
     from typing import get_args, get_origin, Literal  # type: ignore
@@ -15,14 +15,96 @@ except ImportError:
 from .dataclasses import get_fields as dataclasses_get_fields
 
 
-def __add_generics(type_origin: Any, type_args: Tuple, generics: Dict[TypeVar, Type]) -> None:
+def __resolve_type_var(type_var: TypeVar, generics: Dict[TypeVar, Type]) -> Any:
+    """Follows (type var, type) mappings until a non-type-var (or an unmapped type var) is found."""
+    seen: Set[TypeVar] = set()
+    while isinstance(type_var, TypeVar) and type_var in generics and type_var not in seen:
+        seen.add(type_var)
+        type_var = generics[type_var]  # type: ignore
+    return type_var
+
+
+def __resolve_forward_reference(hint: Any, data_class: Type) -> Any:
+    """Resolves a hint (e.g. a type var bound) given as a string or a ForwardRef."""
+    if isinstance(hint, str):
+        return __dereference(hint, data_class)
+    forward_arg = getattr(hint, "__forward_arg__", None)
+    if forward_arg is not None:
+        return __dereference(forward_arg, data_class)
+    return hint
+
+
+def __is_sub_type(sub_type: Any, base_type: Any) -> bool:
+    sub_origin = get_origin(sub_type)
+    if sub_origin is not None:
+        sub_type = sub_origin
+    base_origin = get_origin(base_type)
+    if base_origin is not None:
+        base_type = base_origin
+    try:
+        return issubclass(sub_type, base_type)
+    except TypeError:
+        return False
+
+
+def __check_type_var_constraints(type_var: TypeVar, arg: Any, data_class: Type, path: List[str]) -> None:
+    """Validates a concrete type against the constraints/bound of the type var it substitutes."""
+    if isinstance(arg, TypeVar) or arg is Any:
+        return
+    constraints = getattr(type_var, "__constraints__", ())
+    if constraints:
+        for constraint in constraints:
+            if __is_sub_type(arg, __resolve_forward_reference(constraint, data_class)):
+                return
+        raise TypeVarConstraintError(type_var=type_var, value=arg, path=tuple(path))
+    bound = getattr(type_var, "__bound__", None)
+    if bound is not None:
+        if not __is_sub_type(arg, __resolve_forward_reference(bound, data_class)):
+            raise TypeVarConstraintError(type_var=type_var, value=arg, path=tuple(path))
+
+
+def __path_entry(hint: Any) -> str:
+    origin = get_origin(hint)
+    if origin is None:
+        return getattr(hint, "__qualname__", str(hint))
+    return str(hint)
+
+
+def __add_generics(
+    type_origin: Any, type_args: Tuple, generics: Dict[TypeVar, Type], data_class: Type, path: List[str]
+) -> None:
     """Adds (type var, concrete type) entries derived from a type's origin and args to the provided generics dict."""
     if type_origin and type_args and hasattr(type_origin, "__parameters__"):
         for param, arg in zip(type_origin.__parameters__, type_args):
             if isinstance(param, TypeVar):
+                arg = __resolve_type_var(arg, generics)
                 if param in generics and generics[param] != arg:
                     raise DaciteError(f"Ambiguous TypeVar: {generics[param]} != {arg}")
+                __check_type_var_constraints(param, arg, data_class, path)
                 generics[param] = arg
+
+
+def __collect_generics(
+    hint: Any, generics: Dict[TypeVar, Type], data_class: Type, path: List[str], visited: Set[Any]
+) -> None:
+    """
+    Recursively collects (type var, concrete type) mappings from a (possibly generic) class
+    and its (generic) ancestors, validating each specialization against the declared
+    constraints/bound of the substituted type var.
+    """
+    if hint in visited:
+        return
+    visited.add(hint)
+    cls = get_origin(hint) or hint
+    if not isinstance(cls, type):
+        return
+    path = path + [__path_entry(hint)]
+    __add_generics(cls, get_args(hint), generics, data_class, path)
+    bases = cls.__dict__.get("__orig_bases__", cls.__bases__)
+    for base in bases:
+        if base is object or base is Generic or get_origin(base) is Generic:
+            continue
+        __collect_generics(base, generics, data_class, path, visited)
 
 
 def __dereference(type_name: str, data_class: Type) -> Type:
@@ -51,9 +133,12 @@ def __concretize(hint: Any, generics: Dict[TypeVar, Type], data_class: Type) -> 
         return __dereference(hint, data_class)
 
     if isinstance(hint, TypeVar):
-        # Fall back on the original TypeVar if the generics dict does not contain it.
-        # Setting config.check_types=False will in some cases still make from_dict work, albeit not type checked ofc.
-        return generics.get(hint, hint)
+        hint = __resolve_type_var(hint, generics)
+        if isinstance(hint, TypeVar):
+            # The type var was not specialized - fall back on the documented default:
+            # its bound, the union of its constraints or Any (in this order of precedence).
+            return __type_var_default(hint, generics, data_class)
+        return hint
 
     hint_origin = get_origin(hint)
     hint_args = get_args(hint)
@@ -75,6 +160,22 @@ def __concretize(hint: Any, generics: Dict[TypeVar, Type], data_class: Type) -> 
     return hint
 
 
+def __type_var_default(type_var: TypeVar, generics: Dict[TypeVar, Type], data_class: Type) -> Any:
+    """Provides the documented default for a type var that was not specialized."""
+    bound = getattr(type_var, "__bound__", None)
+    if bound is not None:
+        bound = __resolve_forward_reference(bound, data_class)
+        if bound is type_var:
+            return Any
+        return __concretize(bound, generics, data_class)
+    constraints = getattr(type_var, "__constraints__", ())
+    if constraints:
+        return Union[
+            tuple(__concretize(__resolve_forward_reference(c, data_class), generics, data_class) for c in constraints)
+        ]
+    return Any
+
+
 def orig(data_class: Type) -> Any:
     if is_dataclass(data_class):
         return data_class
@@ -88,16 +189,7 @@ def get_concrete_type_hints(data_class: Type, *args, **kwargs) -> Dict[str, Any]
     """
     generics: Dict[TypeVar, Type] = {}
 
-    dc_origin = get_origin(data_class)
-    dc_args = get_args(data_class)
-    __add_generics(dc_origin, dc_args, generics)
-
-    if hasattr(data_class, "__orig_bases__"):
-        for base in data_class.__orig_bases__:
-            base_origin = get_origin(base)
-            base_args = get_args(base)
-            if base_origin is not Generic:
-                __add_generics(base_origin, base_args, generics)
+    __collect_generics(data_class, generics, orig(data_class), [], set())
 
     data_class = orig(data_class)
     hints = get_type_hints(data_class, *args, **kwargs)
