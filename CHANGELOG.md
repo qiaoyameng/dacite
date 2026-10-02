@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-...
+### Added
+
+- Add `derived_field_policy` configuration for rejecting input to `init=False`
+  fields or asserting that input matches values calculated by `__post_init__`
 
 ## [1.9.2] - 2025-02-05
 

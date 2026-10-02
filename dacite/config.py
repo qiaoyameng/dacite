@@ -1,4 +1,5 @@
 import sys
+from enum import Enum
 from dataclasses import dataclass, field
 from typing import Dict, Any, Callable, Optional, Type, List
 
@@ -11,6 +12,11 @@ else:
     cached_property = property  # type: ignore  # pylint: disable=invalid-name
 
 
+class DerivedFieldPolicy(Enum):
+    REJECT_INPUT = "reject_input"
+    ASSERT_MATCH = "assert_match"
+
+
 @dataclass
 class Config:
     type_hooks: Dict[Type, Callable[[Any], Any]] = field(default_factory=dict)
@@ -20,6 +26,7 @@ class Config:
     strict: bool = False
     strict_unions_match: bool = False
     convert_key: Callable[[str], str] = field(default_factory=lambda: lambda x: x)
+    derived_field_policy: Optional[DerivedFieldPolicy] = None
 
     @cached_property
     def hashable_forward_references(self) -> Optional[FrozenDict]:

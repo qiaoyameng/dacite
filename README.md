@@ -62,6 +62,7 @@ Dacite supports following features:
 - collections
 - custom type hooks
 - case conversion
+- read-only derived field policies
 
 ## Motivation
 
@@ -112,9 +113,52 @@ Configuration is a (data) class with following fields:
 - `strict`
 - `strict_unions_match`
 - `convert_key`
+- `derived_field_policy`
 
 The examples below show all features of `from_dict` function and usage
 of all `Config` parameters.
+
+### Derived fields
+
+Fields marked with `field(init=False)` are often calculated by
+`__post_init__`. By default, dacite keeps its legacy behavior and input for
+these fields is not required. Set `derived_field_policy` to make that behavior
+explicit:
+
+- `DerivedFieldPolicy.REJECT_INPUT` rejects input for derived fields before the
+  dataclass is constructed.
+- `DerivedFieldPolicy.ASSERT_MATCH` constructs the dataclass normally and then
+  compares the supplied value with the calculated result.
+
+Assertion mode never assigns the supplied value before comparison and does not
+construct nested dataclasses a second time. Type hooks, casting and type checks
+are applied to the supplied value using the same rules as for regular fields.
+A failed comparison raises `DerivedFieldMismatchError` (also an
+`AssertionError`); disallowed input raises `DerivedFieldInputError`.
+
+```python
+from dataclasses import dataclass, field
+from typing import List
+from dacite import Config, DerivedFieldPolicy, from_dict
+
+
+@dataclass
+class Order:
+    items: List[int]
+    total: int = field(init=False)
+
+    def __post_init__(self):
+        self.total = sum(self.items)
+
+
+from_dict(Order, {"items": [1, 2]}, Config(
+    derived_field_policy=DerivedFieldPolicy.ASSERT_MATCH
+))
+
+from_dict(Order, {"items": [1, 2], "total": 3}, Config(
+    derived_field_policy=DerivedFieldPolicy.ASSERT_MATCH
+))
+```
 
 ### Nested structures
 

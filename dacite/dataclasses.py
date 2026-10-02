@@ -21,6 +21,10 @@ def get_default_value_for_field(field: Field, type_: Type) -> Any:
     raise DefaultValueNotFoundError()
 
 
+def is_init_var_field(field: Field) -> bool:
+    return field._field_type is _FIELD_INITVAR
+
+
 @cache
 def get_fields(data_class: Type[T]) -> List[Field]:
     fields = getattr(data_class, _FIELDS)

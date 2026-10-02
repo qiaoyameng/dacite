@@ -1,5 +1,6 @@
 from dacite.cache import set_cache_size, get_cache_size, clear_cache
 from dacite.config import Config
+from dacite.config import DerivedFieldPolicy
 from dacite.core import from_dict
 from dacite.exceptions import (
     DaciteError,
@@ -10,6 +11,9 @@ from dacite.exceptions import (
     StrictUnionMatchError,
     ForwardReferenceError,
     UnexpectedDataError,
+    DerivedFieldError,
+    DerivedFieldInputError,
+    DerivedFieldMismatchError,
 )
 
 __all__ = [
@@ -17,6 +21,7 @@ __all__ = [
     "get_cache_size",
     "clear_cache",
     "Config",
+    "DerivedFieldPolicy",
     "from_dict",
     "DaciteError",
     "DaciteFieldError",
@@ -26,4 +31,7 @@ __all__ = [
     "StrictUnionMatchError",
     "ForwardReferenceError",
     "UnexpectedDataError",
+    "DerivedFieldError",
+    "DerivedFieldInputError",
+    "DerivedFieldMismatchError",
 ]
