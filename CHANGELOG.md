@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-...
+### Added
+
+- Validate generic specializations against a type variable's `bound` or constraints, raising `TypeVarBoundError` (with the type variable, the actual type and the inheritance path) on violations
+- Propagate concrete types through multi-level inheritance hierarchies, distinguishing same-named but distinct type variables
 
 ## [1.9.2] - 2025-02-05
 

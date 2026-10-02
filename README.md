@@ -301,6 +301,32 @@ result = from_dict(data_class=C, data=data)
 assert result == C(z=A(x=X(a='foo'), y=[1,2,3]))
 ```
 
+Concrete types are propagated through the whole inheritance hierarchy, even
+across multiple levels and same-named (but distinct) type variables.
+
+If a type variable declares a `bound` or constraints, dacite validates the
+specialization: passing a concrete type that does not satisfy the bound or
+one of the constraints raises a `TypeVarBoundError`, pointing out the type
+variable, the actual type and the inheritance path of the specialization.
+This also applies to type variables used inside nested containers or forward
+references.
+
+```python
+T = TypeVar('T', bound=int)
+
+
+@dataclass
+class A(Generic[T]):
+    x: T
+
+
+from_dict(data_class=A[str], data={'x': 'foo'})  # raises TypeVarBoundError
+```
+
+An unspecialized type variable falls back on the type variable itself (it is
+*not* replaced by `Any`), so `from_dict` with `Config(check_types=False)`
+still works, albeit without type checking for that field.
+
 ### Type hooks
 
 You can use `Config.type_hooks` argument if you want to transform the input 

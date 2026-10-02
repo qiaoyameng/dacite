@@ -1,4 +1,4 @@
-from typing import Any, Type, Optional, Set, Dict
+from typing import Any, List, Type, Optional, Set, Dict, TypeVar
 from dacite.types import is_union
 
 
@@ -68,6 +68,26 @@ class ForwardReferenceError(DaciteError):
 
     def __str__(self) -> str:
         return f"can not resolve forward reference: {self.message}"
+
+
+class TypeVarBoundError(DaciteError):
+    def __init__(self, type_var: TypeVar, value: Any, path: List[str]) -> None:
+        super().__init__()
+        self.type_var = type_var
+        self.value = value
+        self.path = path
+
+    def __str__(self) -> str:
+        if self.type_var.__constraints__:
+            constraints = ", ".join(f'"{_name(constraint)}"' for constraint in self.type_var.__constraints__)
+            restriction = f"any of the constraints ({constraints})"
+        else:
+            restriction = f'the bound "{self.type_var.__bound__}"'
+        return (
+            f'type "{_name(self.value)}" does not satisfy {restriction} '
+            f'of type variable "{self.type_var.__name__}" '
+            f'(inheritance path: {" -> ".join(self.path)})'
+        )
 
 
 class UnexpectedDataError(DaciteError):
