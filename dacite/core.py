@@ -30,6 +30,9 @@ from dacite.types import (
     is_init_var,
     extract_init_var,
     is_subclass,
+    is_typed_dict,
+    get_typed_dict_hints,
+    is_requiredness_marker,
 )
 
 from dacite.generics import get_concrete_type_hints, get_fields, orig
@@ -70,7 +73,9 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
             except DaciteFieldError as error:
                 error.update_path(field.name)
                 raise
-            if config.check_types and not is_instance(value, field_type):
+            if config.check_types and not is_instance(
+                value, field_type, localns=config.hashable_forward_references
+            ):
                 raise WrongTypeError(field_path=field.name, field_type=field_type, value=value)
         else:
             try:
@@ -101,11 +106,15 @@ def _build_value(type_: Type, data: Any, config: Config) -> Any:
         return data
     if is_union(type_):
         data = _build_value_for_union(union=type_, data=data, config=config)
+    elif cache(is_typed_dict)(type_):
+        data = _build_value_for_typed_dict(type_=type_, data=data, config=config)
     elif is_generic_collection(type_):
         data = _build_value_for_collection(collection=type_, data=data, config=config)
     elif cache(is_dataclass)(orig(type_)) and isinstance(data, Mapping):
         data = from_dict(data_class=type_, data=data, config=config)
     for cast_type in config.cast:
+        if cache(is_typed_dict)(type_):
+            break
         if is_subclass(type_, cast_type):
             if is_generic_collection(type_):
                 data = extract_origin_collection(type_)(data)
@@ -113,6 +122,44 @@ def _build_value(type_: Type, data: Any, config: Config) -> Any:
                 data = type_(data)
             break
     return data
+
+
+def _build_value_for_typed_dict(type_: Type, data: Any, config: Config) -> Any:
+    try:
+        hints = cache(get_typed_dict_hints)(type_, localns=config.hashable_forward_references)
+    except NameError as error:
+        raise ForwardReferenceError(str(error)) from None
+
+    if not isinstance(data, Mapping):
+        if config.check_types:
+            raise WrongTypeError(field_type=type_, value=data)
+        return data
+
+    keys = {config.convert_key(key) for key in hints}
+    if config.strict:
+        extra_fields = set(data.keys()) - keys
+        if extra_fields:
+            raise UnexpectedDataError(keys=extra_fields)
+
+    result = {}
+    for key, item_type in hints.items():
+        converted_key = config.convert_key(key)
+        if converted_key in data:
+            field_type = extract_generic(item_type)[0] if is_requiredness_marker(item_type) else item_type
+            try:
+                value = _build_value(type_=field_type, data=data[converted_key], config=config)
+            except DaciteFieldError as error:
+                error.update_path(converted_key)
+                raise
+            if config.check_types and not is_instance(
+                value, field_type, localns=config.hashable_forward_references
+            ):
+                raise WrongTypeError(field_path=converted_key, field_type=field_type, value=value)
+            result[converted_key] = value
+        elif key in type_.__required_keys__:
+            raise MissingValueError(field_path=converted_key)
+
+    return result
 
 
 def _build_value_for_union(union: Type, data: Any, config: Config) -> Any:
@@ -127,7 +174,7 @@ def _build_value_for_union(union: Type, data: Any, config: Config) -> Any:
                 value = _build_value(type_=inner_type, data=data, config=config)
             except Exception:  # pylint: disable=broad-except
                 continue
-            if is_instance(value, inner_type):
+            if is_instance(value, inner_type, localns=config.hashable_forward_references):
                 if config.strict_unions_match:
                     union_matches[inner_type] = value
                 else:
@@ -147,17 +194,43 @@ def _build_value_for_collection(collection: Type, data: Any, config: Config) -> 
     data_type = data.__class__
     if isinstance(data, Mapping) and is_subclass(collection, Mapping):
         item_type = extract_generic(collection, defaults=(Any, Any))[1]
-        return data_type((key, _build_value(type_=item_type, data=value, config=config)) for key, value in data.items())
+        result = {}
+        for key, value in data.items():
+            try:
+                result[key] = _build_value(type_=item_type, data=value, config=config)
+            except DaciteFieldError as error:
+                error.update_path(f"[{key!r}]")
+                raise
+        return data_type(result.items())
     elif is_subclass(collection, tuple):
         if not data:
             return data_type()
         types = extract_generic(collection)
         if len(types) == 2 and types[1] == Ellipsis:
-            return data_type(_build_value(type_=types[0], data=item, config=config) for item in data)
-        return data_type(
-            _build_value(type_=type_, data=item, config=config) for item, type_ in zip_longest(data, types)
-        )
+            result = []
+            for index, item in enumerate(data):
+                try:
+                    result.append(_build_value(type_=types[0], data=item, config=config))
+                except DaciteFieldError as error:
+                    error.update_path(f"[{index}]")
+                    raise
+            return data_type(result)
+        result = []
+        for index, (item, type_) in enumerate(zip_longest(data, types)):
+            try:
+                result.append(_build_value(type_=type_, data=item, config=config))
+            except DaciteFieldError as error:
+                error.update_path(f"[{index}]")
+                raise
+        return data_type(result)
     elif isinstance(data, Collection) and is_subclass(collection, Collection):
         item_type = extract_generic(collection, defaults=(Any,))[0]
-        return data_type(_build_value(type_=item_type, data=item, config=config) for item in data)
+        result = []
+        for index, item in enumerate(data):
+            try:
+                result.append(_build_value(type_=item_type, data=item, config=config))
+            except DaciteFieldError as error:
+                error.update_path(f"[{index}]")
+                raise
+        return data_type(result)
     return data

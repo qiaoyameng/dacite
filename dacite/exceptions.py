@@ -16,7 +16,9 @@ class DaciteFieldError(DaciteError):
         self.field_path = field_path
 
     def update_path(self, parent_field_path: str) -> None:
-        if self.field_path:
+        if self.field_path and self.field_path.startswith("["):
+            self.field_path = f"{parent_field_path}{self.field_path}"
+        elif self.field_path:
             self.field_path = f"{parent_field_path}.{self.field_path}"
         else:
             self.field_path = parent_field_path
@@ -61,7 +63,7 @@ class StrictUnionMatchError(DaciteFieldError):
         return f'can not choose between possible Union matches for field "{self.field_path}": {conflicting_types}'
 
 
-class ForwardReferenceError(DaciteError):
+class ForwardReferenceError(DaciteFieldError):
     def __init__(self, message: str) -> None:
         super().__init__()
         self.message = message
@@ -70,11 +72,12 @@ class ForwardReferenceError(DaciteError):
         return f"can not resolve forward reference: {self.message}"
 
 
-class UnexpectedDataError(DaciteError):
-    def __init__(self, keys: Set[str]) -> None:
-        super().__init__()
+class UnexpectedDataError(DaciteFieldError):
+    def __init__(self, keys: Set[str], field_path: Optional[str] = None) -> None:
+        super().__init__(field_path=field_path)
         self.keys = keys
 
     def __str__(self) -> str:
         formatted_keys = ", ".join(f'"{key}"' for key in self.keys)
-        return f"can not match {formatted_keys} to any data class field"
+        field = f' for field "{self.field_path}"' if self.field_path else ""
+        return f"can not match {formatted_keys} to any data class field{field}"

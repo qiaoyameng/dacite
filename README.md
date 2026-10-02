@@ -60,6 +60,7 @@ Dacite supports following features:
 - generics
 - forward references
 - collections
+- `TypedDict` fields
 - custom type hooks
 - case conversion
 
@@ -144,6 +145,35 @@ result = from_dict(data_class=B, data=data)
 
 assert result == B(a=A(x='test', y=1))
 ```
+
+### TypedDict fields
+
+Fields declared with `TypedDict` are recursively converted and validated.
+The result remains a plain `dict`, respecting `total`, `Required`,
+`NotRequired`, and inherited requiredness. Missing optional keys are omitted,
+while a present `None` is preserved for `Optional` values.
+
+```python
+from typing import TypedDict
+
+
+class UserData(TypedDict):
+    name: str
+    age: NotRequired[int]
+
+
+@dataclass
+class Container:
+    user: UserData
+
+
+result = from_dict(Container, {'user': {'name': 'John'}})
+
+assert result == Container(user={'name': 'John'})
+```
+
+The `strict`, `type_hooks`, `forward_references`, and `convert_key` options
+also apply recursively inside `TypedDict` fields.
 
 ### Optional fields
 
