@@ -1,6 +1,7 @@
+import inspect
 from dataclasses import is_dataclass
 from itertools import zip_longest
-from typing import TypeVar, Type, Optional, Mapping, Any, Collection, MutableMapping
+from typing import TypeVar, Type, Optional, Mapping, Any, Collection, MutableMapping, Tuple, List, Dict
 
 from dacite.cache import cache
 from dacite.config import Config
@@ -19,6 +20,7 @@ from dacite.exceptions import (
     DaciteFieldError,
     UnexpectedDataError,
     StrictUnionMatchError,
+    SignatureBindingError,
 )
 from dacite.types import (
     is_instance,
@@ -47,6 +49,7 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
     """
     init_values: MutableMapping[str, Any] = {}
     post_init_values: MutableMapping[str, Any] = {}
+    extra_values: MutableMapping[str, Any] = {}
     config = config or Config()
 
     try:
@@ -84,12 +87,97 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
         elif not is_frozen(data_class):
             post_init_values[field.name] = value
 
-    instance = data_class(**init_values)
+    if config.adapt_signature:
+        declared_keys = {config.convert_key(field.name) for field in data_class_fields}
+        extra_values = {key: value for key, value in data.items() if key not in declared_keys}
+        args, kwargs = _bind_init_values(data_class, init_values, extra_values)
+        instance = data_class(*args, **kwargs)
+    else:
+        instance = data_class(**init_values)
 
     for key, value in post_init_values.items():
         setattr(instance, key, value)
 
     return instance
+
+
+def _bind_init_values(
+    data_class: Type[T], values: Mapping[str, Any], extra_values: Optional[Mapping[str, Any]] = None
+) -> Tuple[List[Any], Dict[str, Any]]:
+    """Bind converted field values to the constructor signature.
+
+    Values are distributed to positional and keyword arguments based solely on
+    ``inspect.signature``, without ever invoking the constructor to probe it.
+    """
+    extra_values = extra_values or {}
+    signature = cache(_get_init_signature)(data_class)
+    parameters = list(signature.parameters.values())
+    if parameters and parameters[0].name == "self":
+        parameters = parameters[1:]
+
+    remaining = dict(values)
+    args = []
+    kwargs = {}
+    positional_phase = True
+
+    for parameter in parameters:
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise SignatureBindingError(
+                data_class,
+                f'can not determine "*{parameter.name}" values from declared fields',
+            )
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            kwargs.update(remaining)
+            kwargs.update(extra_values)
+            remaining.clear()
+            positional_phase = False
+            continue
+        if parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+            positional_phase = False
+            if parameter.name in remaining:
+                kwargs[parameter.name] = remaining.pop(parameter.name)
+            elif parameter.default is inspect.Parameter.empty:
+                raise SignatureBindingError(
+                    data_class,
+                    f'required keyword-only parameter "{parameter.name}" has no matching declared field',
+                )
+            continue
+        if parameter.kind == inspect.Parameter.POSITIONAL_ONLY:
+            if parameter.name in remaining:
+                args.append(remaining.pop(parameter.name))
+            elif parameter.default is not inspect.Parameter.empty:
+                args.append(parameter.default)
+            else:
+                raise SignatureBindingError(
+                    data_class,
+                    f'required positional-only parameter "{parameter.name}" has no matching declared field',
+                )
+            continue
+        if parameter.name in remaining:
+            value = remaining.pop(parameter.name)
+            if positional_phase:
+                args.append(value)
+            else:
+                kwargs[parameter.name] = value
+        elif parameter.default is inspect.Parameter.empty:
+            raise SignatureBindingError(
+                data_class,
+                f'required parameter "{parameter.name}" has no matching declared field',
+            )
+        elif positional_phase:
+            positional_phase = False
+
+    if remaining:
+        raise SignatureBindingError(
+            data_class,
+            f'no matching constructor parameters for fields: {", ".join(sorted(remaining))}',
+        )
+
+    return args, kwargs
+
+
+def _get_init_signature(data_class: Type[T]) -> inspect.Signature:
+    return inspect.signature(data_class.__init__)
 
 
 def _build_value(type_: Type, data: Any, config: Config) -> Any:

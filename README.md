@@ -409,6 +409,43 @@ returns instance of this type. It means that it's possible that there are other
 matching types further on the `Union` types list. With `strict_unions_match` 
 only a single match is allowed, otherwise `dacite` raises `StrictUnionMatchError`.
 
+### Constructor signature adaptation
+
+If you declare a data class with `@dataclass(init=False)` and provide your own
+`__init__` that uses positional-only or keyword-only parameters, a plain
+`**kwargs` call does not fit. Enable `Config.adapt_signature` to distribute the
+converted field values according to the actual constructor signature
+(inspected up-front, never probed by trial calls):
+
+- positional and positional-only parameters are filled positionally in
+  constructor order, keyword-only parameters are passed by name;
+- parameters with default values that have no matching field are simply
+  omitted;
+- `InitVar` fields map to the constructor parameter of the same name;
+- undeclared input keys are forwarded through `**kwargs` when the constructor
+  accepts them (still rejected up-front in `strict` mode).
+
+When the constructor declares `*args`, or a required parameter that can not be
+mapped to a declared field, `dacite` raises `SignatureBindingError` *before*
+calling the constructor. A `TypeError` raised inside the constructor itself is
+propagated unchanged.
+
+```python
+@dataclass(init=False)
+class X:
+    b: int
+    a: int
+
+    def __init__(self, a, b, *, flag=False):
+        self.a = a
+        self.b = b
+        self.flag = flag
+
+result = from_dict(X, {'b': 2, 'a': 1}, Config(adapt_signature=True))
+
+assert result.a == 1 and result.b == 2
+```
+
 ## Convert key
 
 You can pass a callable to the `convert_key` configuration parameter to convert camelCase to snake_case.
@@ -450,6 +487,9 @@ dataclass
 data has not matching keys
 - `StrictUnionMatchError` - raised when `strict_unions_match` mode is enabled 
 and the input data has ambiguous `Union` match
+- `SignatureBindingError` - raised when `adapt_signature` mode is enabled and
+the converted values cannot be bound to the constructor signature (e.g. `*args`
+or a required parameter without a matching field)
 
 ## Development
 
