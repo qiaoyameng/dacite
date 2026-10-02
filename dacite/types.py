@@ -135,6 +135,22 @@ def is_generic_dataclass(type_: Type) -> bool:
     return is_dataclass(get_origin(type_))
 
 
+@cache
+def is_typed_dict(type_: Type) -> bool:
+    try:
+        from typing_extensions import is_typeddict
+
+        return is_typeddict(type_)
+    except ImportError:
+        pass
+    try:
+        from typing import is_typeddict
+
+        return is_typeddict(type_)
+    except ImportError:
+        return getattr(type_, "__is_typeddict__", False) is True or type(type_).__name__ == "_TypedDictMeta"
+
+
 def is_instance(value: Any, type_: Type) -> bool:
     try:
         # As described in PEP 484 - section: "The numeric tower"
@@ -178,4 +194,6 @@ def is_instance(value: Any, type_: Type) -> bool:
         return is_subclass(value, extract_generic(type_)[0])
     if is_generic_dataclass(type_):
         return isinstance(value, get_origin(type_))  # type: ignore[arg-type]
+    if is_typed_dict(type_):
+        return isinstance(value, Mapping)
     return False
