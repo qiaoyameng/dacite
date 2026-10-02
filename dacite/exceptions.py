@@ -78,3 +78,12 @@ class UnexpectedDataError(DaciteError):
     def __str__(self) -> str:
         formatted_keys = ", ".join(f'"{key}"' for key in self.keys)
         return f"can not match {formatted_keys} to any data class field"
+
+
+class InitSignatureError(DaciteError):
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self.message = message
+
+    def __str__(self) -> str:
+        return f"can not adapt data class fields to the __init__ signature: {self.message}"

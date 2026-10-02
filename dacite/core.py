@@ -1,6 +1,7 @@
+import inspect
 from dataclasses import is_dataclass
 from itertools import zip_longest
-from typing import TypeVar, Type, Optional, Mapping, Any, Collection, MutableMapping
+from typing import TypeVar, Type, Optional, Mapping, Any, Collection, MutableMapping, Dict, List
 
 from dacite.cache import cache
 from dacite.config import Config
@@ -19,6 +20,7 @@ from dacite.exceptions import (
     DaciteFieldError,
     UnexpectedDataError,
     StrictUnionMatchError,
+    InitSignatureError,
 )
 from dacite.types import (
     is_instance,
@@ -84,12 +86,59 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
         elif not is_frozen(data_class):
             post_init_values[field.name] = value
 
-    instance = data_class(**init_values)
+    if config.adapt_init_signature:
+        instance = _create_instance(data_class, init_values)
+    else:
+        instance = data_class(**init_values)
 
     for key, value in post_init_values.items():
         setattr(instance, key, value)
 
     return instance
+
+
+def _create_instance(data_class: Type[T], init_values: Mapping[str, Any]) -> T:
+    try:
+        parameters = list(inspect.signature(data_class).parameters.values())
+    except (TypeError, ValueError):
+        return data_class(**init_values)
+    remaining: Dict[str, Any] = dict(init_values)
+    positional_args: List[Any] = []
+    keyword_args: Dict[str, Any] = {}
+    accepts_var_keyword = False
+    for parameter in parameters:
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise InitSignatureError(
+                f'variadic positional parameter "{parameter}" of {data_class.__name__}.__init__ '
+                f"can not be determined from data class fields"
+            )
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            accepts_var_keyword = True
+            continue
+        if parameter.name in remaining:
+            value = remaining.pop(parameter.name)
+        elif parameter.default is inspect.Parameter.empty:
+            raise InitSignatureError(
+                f'required parameter "{parameter.name}" of {data_class.__name__}.__init__ '
+                f"does not match any data class field"
+            )
+        elif parameter.kind == inspect.Parameter.POSITIONAL_ONLY:
+            value = parameter.default
+        else:
+            continue
+        if parameter.kind == inspect.Parameter.POSITIONAL_ONLY:
+            positional_args.append(value)
+        else:
+            keyword_args[parameter.name] = value
+    if remaining:
+        if accepts_var_keyword:
+            keyword_args.update(remaining)
+        else:
+            unmappable_fields = ", ".join(f'"{name}"' for name in remaining)
+            raise InitSignatureError(
+                f"fields {unmappable_fields} do not match any parameter of {data_class.__name__}.__init__"
+            )
+    return data_class(*positional_args, **keyword_args)
 
 
 def _build_value(type_: Type, data: Any, config: Config) -> Any:

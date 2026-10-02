@@ -112,6 +112,7 @@ Configuration is a (data) class with following fields:
 - `strict`
 - `strict_unions_match`
 - `convert_key`
+- `adapt_init_signature`
 
 The examples below show all features of `from_dict` function and usage
 of all `Config` parameters.
@@ -433,6 +434,38 @@ result = from_dict(Person, data, Config(convert_key=to_camel_case))
 assert result == Person(first_name='John', last_name='Doe') 
 ```
 
+## Adapt init signature
+
+By default `dacite` passes all field values to the data class constructor as
+keyword arguments. This does not work for data classes with a custom `__init__`
+(e.g. `@dataclass(init=False)`) that uses positional-only parameters. With
+`adapt_init_signature` mode enabled, field values are converted as usual and
+then distributed across positional and keyword arguments according to the
+`__init__` signature. Default values, keyword-only parameters and `InitVar`
+fields are supported. A variadic positional parameter (`*args`) or a required
+parameter that does not match any data class field is rejected with
+`InitSignatureError` before the constructor is called.
+
+```python
+@dataclass(init=False)
+class Point:
+    x: int
+    y: int
+
+    def __init__(self, x, y, /):
+        self.x = x
+        self.y = y
+
+data = {
+    'x': 1,
+    'y': 2,
+}
+
+result = from_dict(Point, data, Config(adapt_init_signature=True))
+
+assert result == Point(1, 2)
+```
+
 ## Exceptions
 
 Whenever something goes wrong, `from_dict` will raise adequate
@@ -450,6 +483,8 @@ dataclass
 data has not matching keys
 - `StrictUnionMatchError` - raised when `strict_unions_match` mode is enabled 
 and the input data has ambiguous `Union` match
+- `InitSignatureError` - raised when `adapt_init_signature` mode is enabled
+and data class fields can not be mapped to the `__init__` signature
 
 ## Development
 

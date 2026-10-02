@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-...
+### Added
+
+- Add `adapt_init_signature` config parameter to distribute field values
+across positional and keyword arguments of a custom `__init__` signature
 
 ## [1.9.2] - 2025-02-05
 
