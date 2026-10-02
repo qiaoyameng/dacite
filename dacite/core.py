@@ -3,7 +3,7 @@ from itertools import zip_longest
 from typing import TypeVar, Type, Optional, Mapping, Any, Collection, MutableMapping
 
 from dacite.cache import cache
-from dacite.config import Config
+from dacite.config import Config, DerivedFieldsPolicy
 from dacite.data import Data
 from dacite.dataclasses import (
     get_default_value_for_field,
@@ -19,6 +19,8 @@ from dacite.exceptions import (
     DaciteFieldError,
     UnexpectedDataError,
     StrictUnionMatchError,
+    DerivedFieldInputError,
+    DerivedFieldMismatchError,
 )
 from dacite.types import (
     is_instance,
@@ -47,6 +49,7 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
     """
     init_values: MutableMapping[str, Any] = {}
     post_init_values: MutableMapping[str, Any] = {}
+    derived_values: MutableMapping[str, Any] = {}
     config = config or Config()
 
     try:
@@ -65,6 +68,18 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
         key = config.convert_key(field.name)
 
         if key in data:
+            if not field.init and config.derived_fields_policy is not DerivedFieldsPolicy.IGNORE:
+                if config.derived_fields_policy is DerivedFieldsPolicy.REJECT:
+                    raise DerivedFieldInputError(field.name)
+                try:
+                    value = _build_value(type_=field_type, data=data[key], config=config)
+                except DaciteFieldError as error:
+                    error.update_path(field.name)
+                    raise
+                if config.check_types and not is_instance(value, field_type):
+                    raise WrongTypeError(field_path=field.name, field_type=field_type, value=value)
+                derived_values[field.name] = value
+                continue
             try:
                 value = _build_value(type_=field_type, data=data[key], config=config)
             except DaciteFieldError as error:
@@ -88,6 +103,11 @@ def from_dict(data_class: Type[T], data: Data, config: Optional[Config] = None) 
 
     for key, value in post_init_values.items():
         setattr(instance, key, value)
+
+    for key, value in derived_values.items():
+        computed = getattr(instance, key)
+        if computed != value:
+            raise DerivedFieldMismatchError(field_path=key, value=value, computed=computed)
 
     return instance
 

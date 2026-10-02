@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-...
+### Added
+
+- Add `Config.derived_fields_policy` (`DerivedFieldsPolicy`) to control how input
+values for `init=False` (derived) fields are handled: `IGNORE` (default, existing
+behavior), `REJECT` (raise `DerivedFieldInputError`) or `VALIDATE` (construct
+first, then raise `DerivedFieldMismatchError` if a provided value does not match
+the computed one)
 
 ## [1.9.2] - 2025-02-05
 

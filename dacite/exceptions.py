@@ -78,3 +78,21 @@ class UnexpectedDataError(DaciteError):
     def __str__(self) -> str:
         formatted_keys = ", ".join(f'"{key}"' for key in self.keys)
         return f"can not match {formatted_keys} to any data class field"
+
+
+class DerivedFieldInputError(DaciteFieldError):
+    def __str__(self) -> str:
+        return f'can not provide value for derived field "{self.field_path}"'
+
+
+class DerivedFieldMismatchError(DaciteFieldError):
+    def __init__(self, value: Any, computed: Any, field_path: Optional[str] = None) -> None:
+        super().__init__(field_path=field_path)
+        self.value = value
+        self.computed = computed
+
+    def __str__(self) -> str:
+        return (
+            f'value "{self.value}" of derived field "{self.field_path}" '
+            f'does not match computed value "{self.computed}"'
+        )

@@ -112,6 +112,7 @@ Configuration is a (data) class with following fields:
 - `strict`
 - `strict_unions_match`
 - `convert_key`
+- `derived_fields_policy`
 
 The examples below show all features of `from_dict` function and usage
 of all `Config` parameters.
@@ -433,6 +434,42 @@ result = from_dict(Person, data, Config(convert_key=to_camel_case))
 assert result == Person(first_name='John', last_name='Doe') 
 ```
 
+### Derived fields policy
+
+Fields declared with `init=False` are usually computed inside `__post_init__`
+and treated as read-only results. The `derived_fields_policy` configuration
+parameter controls how `from_dict` handles input values for such fields:
+
+- `DerivedFieldsPolicy.IGNORE` (default) - keeps the existing behavior,
+provided values are assigned after construction (skipped for frozen classes)
+- `DerivedFieldsPolicy.REJECT` - raises `DerivedFieldInputError` when the
+input data contains a value for a derived field
+- `DerivedFieldsPolicy.VALIDATE` - constructs the data class normally
+(without the provided value, so `__post_init__` runs exactly once) and then
+compares each provided derived value with the computed one; a mismatch raises
+`DerivedFieldMismatchError`
+
+```python
+@dataclass
+class Order:
+    items: List[float]
+    total: float = field(init=False)
+
+    def __post_init__(self):
+        self.total = sum(self.items)
+
+config = Config(derived_fields_policy=DerivedFieldsPolicy.VALIDATE)
+
+from_dict(Order, {"items": [1.0, 2.0], "total": 3.0}, config)  # OK
+from_dict(Order, {"items": [1.0, 2.0]}, config)  # OK, derived value is not required
+from_dict(Order, {"items": [1.0, 2.0], "total": 100.0}, config)  # raises DerivedFieldMismatchError
+```
+
+Provided values are transformed with `type_hooks` and checked against the
+field type before comparison, and the policy applies recursively to nested
+data classes as well as to `frozen` and `slots` data classes. Exceptions
+raised by the data class itself during construction are propagated unchanged.
+
 ## Exceptions
 
 Whenever something goes wrong, `from_dict` will raise adequate
@@ -450,6 +487,10 @@ dataclass
 data has not matching keys
 - `StrictUnionMatchError` - raised when `strict_unions_match` mode is enabled 
 and the input data has ambiguous `Union` match
+- `DerivedFieldInputError` - raised when `derived_fields_policy` is `REJECT`
+and the input data has a value for a derived (`init=False`) field
+- `DerivedFieldMismatchError` - raised when `derived_fields_policy` is
+`VALIDATE` and a provided derived value does not match the computed one
 
 ## Development
 
